@@ -1,0 +1,25 @@
+# Local data
+data/
+datasets/
+raw/
+processed/
+
+# Medical image formats
+*.dcm
+*.dicom
+*.nii
+*.nii.gz
+*.mha
+*.nrrd
+
+# Secrets/env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
