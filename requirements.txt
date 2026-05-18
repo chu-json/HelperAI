@@ -1,0 +1,8 @@
+gen3>=4.20
+pandas>=2.0
+pydicom>=2.4
+tqdm>=4.66
+python-dotenv>=1.0
+matplotlib>=3.7
+numpy>=1.24
+jupyter>=1.0

@@ -1,10 +1,17 @@
-# Local data
+# --- Credentials / secrets ---
+credentials.json
+*credentials*.json
+.env
+.env.*
+!.env.example
+
+# --- Local data (NEVER commit DICOMs or PHI-bearing manifests) ---
 data/
 datasets/
 raw/
 processed/
 
-# Medical image formats
+# --- Medical image formats ---
 *.dcm
 *.dicom
 *.nii
@@ -12,14 +19,25 @@ processed/
 *.mha
 *.nrrd
 
-# Secrets/env
-.env
-.env.*
-!.env.example
+# --- MIDRC / Gen3 manifests and tokens (may contain object IDs / identifiers) ---
+*.manifest.json
+manifest*.json
+gen3-*.log
+.gen3/
 
-# Python
+# --- Outputs that may include identifiers ---
+# Keep small aggregated summary CSVs in outputs/ committable by default,
+# but ignore obvious metadata dumps that include PatientID etc.
+outputs/dicom_file_metadata.csv
+
+# --- Python ---
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 venv/
 .ipynb_checkpoints/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
