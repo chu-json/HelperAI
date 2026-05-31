@@ -30,13 +30,24 @@ gen3-*.log
 # but ignore obvious metadata dumps that include PatientID etc.
 outputs/dicom_file_metadata.csv
 
+# --- Local model training artifacts ---
+models/
+checkpoints/
+outputs/resnet18_head_chest/
+*.pt
+*.pth
+
 # --- Python ---
 __pycache__/
 *.pyc
 *.pyo
 .venv/
+.venv311/
 venv/
 .ipynb_checkpoints/
+
+# --- Local tools ---
+bin/gen3-client
 
 # --- OS ---
 .DS_Store
