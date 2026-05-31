@@ -1,54 +1,61 @@
 # HelperAI
 
-A small, local, freely-licensed pilot tool for the Langlotz Lab / RSNA / Cornell
-Radiology pilot. It is **not** a diagnostic tool.
+A local, freely licensed QA / classification pilot for the Langlotz Lab / RSNA /
+Cornell Radiology project. It is **not** a diagnostic tool.
 
-The long-term goal is a QA / classification "safety gate" that checks whether a
-DICOM series is the expected kind of imaging (modality, body part, view) before
-it is passed to a downstream AI system.
+**Goal:** build a safety gate that checks whether a DICOM series is the expected
+kind of imaging (modality, body part, view) before it is passed to a downstream
+AI system.
 
-## Current scope
+## Current Scope
 
-This repo currently supports two local experimental phases:
+This repo now contains two complementary local experimentation paths:
 
-1. **Phase 0: data preparation** - query MIDRC CT metadata, select a balanced
-   head/chest cohort, and build CT series-level mosaic PNGs.
-2. **Phase 1: model training** - train a ResNet-18 classifier that predicts
-   whether a CT mosaic is `head` or `chest`.
+1. **General image-export pipeline**: query MIDRC classes, download ZIPs,
+   extract DICOMs, build a dataset manifest, and export 224x224 PNGs compatible
+   with `torchvision.datasets.ImageFolder`.
+2. **CT mosaic pipeline**: query a balanced head/chest CT cohort, build one
+   series-level mosaic PNG per CT series, train a ResNet-18 classifier on those
+   mosaics, and analyze model results.
 
-It does not upload, share, or commit imaging data. The labels are weak labels
-derived from MIDRC metadata, not clinical ground truth.
+All labels are metadata-derived weak labels, not radiologist-verified clinical
+ground truth. The repo does not upload, share, or commit raw imaging data.
 
-## Repo layout
+## Repo Layout
 
-```
+```text
 HelperAI/
 ├── README.md
 ├── requirements.txt
-├── .gitignore
 ├── notebooks/
-│   ├── 01_midrc_tiny_download.ipynb   # auth + tiny MIDRC pull
+│   ├── 01_midrc_tiny_download.ipynb        # auth + tiny MIDRC pull
 │   ├── 02_extract_and_inspect_dicoms.ipynb # unzip + series grouping
-│   ├── 03_visual_inspect.ipynb        # raw DICOM visual QA
-│   ├── 04_create_mosaics.ipynb        # CT mosaic generation QA
-│   └── 05_analyze_model_results.ipynb # reusable model results analysis
+│   ├── 02_inspect_dicoms.ipynb             # alternate inspection notebook
+│   ├── 03_visual_inspect.ipynb             # raw DICOM visual QA
+│   ├── 04_create_mosaics.ipynb             # CT mosaic generation QA
+│   └── 05_analyze_model_results.ipynb      # reusable model results analysis
 ├── scripts/
-│   ├── extract_midrc_zips.py          # extract MIDRC ZIPs
-│   ├── inspect_dicoms.py              # series-level DICOM summary
-│   ├── create_series_mosaics.py       # CT series mosaic generator
-│   ├── download_midrc_ct_cohort.py    # CT head/chest MIDRC cohort selector
-│   ├── build_midrc_mosaic_dataset.py  # download one series -> mosaic -> cleanup
-│   └── train_head_chest_resnet18.py   # train ResNet-18 on mosaic PNGs
-├── data/                              # gitignored
-│   ├── raw/                           # downloaded DICOMs (gitignored)
-│   ├── extracted/                     # unzipped DICOMs (gitignored)
-│   ├── metadata/                      # query result CSVs (gitignored)
-│   ├── manifests/                     # Gen3 manifests (gitignored)
-│   └── mosaics/                       # generated CT PNG mosaics (gitignored)
+│   ├── query_midrc_bulk.py                 # bulk MIDRC query + manifests
+│   ├── extract_midrc_zips.py               # unzip downloaded series
+│   ├── inspect_dicoms.py                   # DICOM header summary utility
+│   ├── build_dataset.py                    # filter, label, split extracted DICOMs
+│   ├── export_images.py                    # DICOM series -> PNG exports
+│   ├── download_midrc_ct_cohort.py         # CT head/chest cohort selector
+│   ├── build_midrc_mosaic_dataset.py       # download one series -> mosaic -> cleanup
+│   ├── create_series_mosaics.py            # reusable CT mosaic generator
+│   └── train_head_chest_resnet18.py        # train ResNet-18 on mosaic PNGs
+├── data/                                   # gitignored
+│   ├── raw/                                # downloaded ZIPs / DICOMs
+│   ├── extracted/                          # unzipped DICOM series
+│   ├── images/                             # exported ImageFolder-style PNGs
+│   ├── metadata/                           # query result CSVs
+│   ├── manifests/                          # Gen3 manifests
+│   └── mosaics/                            # generated CT mosaic PNGs
 └── outputs/
-    ├── sample_series_summary.csv      # safe-to-commit aggregate summary
-    ├── mosaic_manifest.csv            # safe-to-commit mosaic manifest
-    └── resnet18_head_chest/           # local training artifacts (gitignored)
+    ├── sample_series_summary.csv           # safe-to-commit aggregate summary
+    ├── dataset_manifest.csv                # general series labels + splits
+    ├── image_manifest.csv                  # exported PNG paths
+    └── mosaic_manifest.csv                 # CT mosaic labels + paths
 ```
 
 ## Setup
@@ -57,8 +64,8 @@ HelperAI/
 pip install -r requirements.txt
 ```
 
-Configure the Gen3 client once (uses the credentials.json you downloaded from
-the MIDRC portal):
+Configure the Gen3 client once using the `credentials.json` from the MIDRC
+portal:
 
 ```bash
 /Applications/gen3-client configure \
@@ -69,9 +76,96 @@ the MIDRC portal):
 /Applications/gen3-client auth --profile=midrc
 ```
 
-## Run the Full V1 Pipeline
+## Path A: General Image-Export Dataset
 
-### 1. Optional tiny notebook path
+Use this path when you want a broader body-part / view dataset exported as PNGs
+that can be loaded directly with `torchvision.datasets.ImageFolder`.
+
+### Step 1 - Query MIDRC
+
+```bash
+# Dry run: verify connectivity and print record counts
+python scripts/query_midrc_bulk.py --max-per-class 1000 --dry-run
+
+# Full query: write manifests under data/manifests/
+python scripts/query_midrc_bulk.py --max-per-class 1000
+
+# Specific classes only
+python scripts/query_midrc_bulk.py --classes chest_xray head_ct --max-per-class 500
+```
+
+Available classes include `chest_xray`, `abdomen_xray`, and `head_ct`.
+
+### Step 2 - Download ZIPs via gen3-client
+
+The query script prints the exact commands. Example:
+
+```bash
+/Applications/gen3-client download-multiple-files \
+  --profile=midrc \
+  --manifest=data/manifests/chest_xray_manifest.json \
+  --download-path=data/raw/chest_xray/ \
+  --numparallel=5 \
+  --skip-completed
+```
+
+### Step 3 - Extract ZIPs
+
+```bash
+python scripts/extract_midrc_zips.py
+# or with options:
+python scripts/extract_midrc_zips.py --input data/raw --output data/extracted
+```
+
+### Step 4 - Build Dataset Manifest
+
+Reads extracted DICOMs, filters derived / non-imaging series, assigns body-part
+and view labels from DICOM metadata, and creates a patient-level stratified
+70/15/15 train/val/test split.
+
+```bash
+python scripts/build_dataset.py
+# or:
+python scripts/build_dataset.py \
+  --input data/extracted \
+  --output outputs/dataset_manifest.csv \
+  --drop-unknown
+```
+
+Output: `outputs/dataset_manifest.csv` with columns such as:
+
+- `series_uid`, `study_uid`, `patient_id`
+- `modality`, `body_part_label`, `view_label`
+- `n_files`, `representative_dcm`, `split`
+
+Derived series are excluded when `ImageType` starts with `DERIVED` or
+`SeriesDescription` matches patterns such as `Segmentation`, `Scout`,
+`Localizer`, `SR`, `KOS`, or `Dose Report`.
+
+### Step 5 - Export Images
+
+Converts each series to a single representative 224x224 RGB PNG:
+
+```bash
+python scripts/export_images.py
+# Options:
+python scripts/export_images.py --size 224 --ct-window brain --workers 8
+```
+
+Output:
+
+```text
+data/images/
+  train/CHEST/ HEAD/ ABDOMEN/ SPINE/ EXTREMITY/
+  val/...
+  test/...
+```
+
+## Path B: CT Mosaic Head/Chest Classifier
+
+Use this path for the current CT-only series mosaic classifier.
+
+### Step 1 - Optional Notebook Exploration
 
 ```bash
 jupyter notebook notebooks/01_midrc_tiny_download.ipynb
@@ -81,10 +175,7 @@ jupyter notebook notebooks/04_create_mosaics.ipynb
 jupyter notebook notebooks/05_analyze_model_results.ipynb
 ```
 
-Use this path for manual exploration and visual QA. For the balanced CT
-head/chest classifier dataset, prefer the script path below.
-
-### 2. Query a balanced CT head/chest cohort
+### Step 2 - Query a Balanced CT Head/Chest Cohort
 
 Query 100 head CT and 100 chest CT DICOM series. This writes metadata CSVs under
 `data/metadata/` and does not download pixel data:
@@ -104,7 +195,7 @@ python scripts/download_midrc_ct_cohort.py \
   --exclude-series-uid example.bad.series.uid
 ```
 
-### 3. Build CT mosaic PNGs
+### Step 3 - Build CT Mosaic PNGs
 
 Build mosaics one series at a time. The script downloads a series ZIP into a
 temporary work folder, extracts it, writes one mosaic PNG, appends the manifest,
@@ -131,7 +222,7 @@ print(m["body_region"].value_counts())
 PY
 ```
 
-### 4. Train ResNet-18 on the mosaics
+### Step 4 - Train ResNet-18 on Mosaics
 
 Train the binary classifier from the manifest. The default uses ImageNet
 pretrained ResNet-18 weights, resizes mosaics to 224x224, and creates
@@ -162,7 +253,7 @@ gitignored:
   and confusion matrix.
 - `test_predictions.csv` - per-series test predictions.
 
-### 5. Analyze model results
+### Step 5 - Analyze Model Results
 
 Open the reusable analysis notebook after training:
 
@@ -185,44 +276,32 @@ It includes:
 - mosaic previews for mistakes and sampled correct predictions
 - notes on weak labels, series-level splits, and pilot limitations
 
-### 6. Optional standalone DICOM inspection / mosaic creation
+## Label Strategy
 
-If you already have extracted DICOMs and want to inspect or build mosaics
-outside the V1 one-series-at-a-time builder, use:
+Labels are derived from DICOM and MIDRC metadata, in priority order depending on
+the pipeline:
 
-```bash
-python scripts/inspect_dicoms.py \
-  --input  data/extracted \
-  --output outputs/sample_series_summary.csv
-```
+1. Structured tags such as `BodyPartExamined` and `ViewPosition`
+2. Study / series description keyword search
+3. Source-class folder or cohort metadata
 
-Create CT series-level mosaics:
+These are **weak labels**. Future work should include human review of false
+positives/negatives, better fuzzy matching for ambiguous descriptions, and
+corrected labels fed back into training.
 
-```bash
-python scripts/create_series_mosaics.py
-```
-
-Pipeline overview:
-
-```text
-MIDRC query -> selected cohort CSV -> per-series ZIP download -> mosaic PNGs
-  -> mosaic manifest -> model train/val/test split -> metrics/checkpoints
-  -> reusable results analysis notebook
-```
-
-## Safety rules (do not violate)
+## Safety Rules
 
 - Never commit `credentials.json`.
-- Never commit anything under `data/` (DICOMs, metadata CSVs, manifests).
-- Never commit `data/mosaics/` (mosaics are derived image data).
-- Never commit `outputs/dicom_file_metadata.csv` (it contains per-file IDs).
-- Never commit model checkpoints (`*.pt`, `*.pth`) unless there is an explicit
-  reason and review.
-- Only `outputs/sample_series_summary.csv` (aggregated, no PatientID) is meant
-  to be committable.
-- `outputs/mosaic_manifest.csv` is meant to be committable; it records safe
-  aggregate mosaic metadata and relative paths, not pixel data.
+- Never commit anything under `data/` (DICOMs, metadata CSVs, manifests, images,
+  or mosaics).
+- Never commit `outputs/dicom_file_metadata.csv` or `outputs/image_manifest.csv`
+  if they contain patient-level identifiers.
+- Do not commit trained model weights (`*.pt`, `*.pth`) unless there is an
+  explicit reason and review.
+- `outputs/sample_series_summary.csv`, `outputs/dataset_manifest.csv`, and
+  `outputs/mosaic_manifest.csv` are intended to be committable only when they
+  contain aggregate metadata and no patient identifiers.
 - Training metrics and split CSVs under `outputs/resnet18_head_chest/` are local
   experiment artifacts by default.
-- Start tiny. The first success criterion is "a nonzero number of `.dcm`
-  files downloaded", not a large cohort.
+- Start tiny. The first success criterion is "a nonzero number of `.dcm` files
+  downloaded", not a large cohort.
