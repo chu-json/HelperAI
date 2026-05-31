@@ -1,10 +1,15 @@
 gen3>=4.20
 pandas>=2.0
 pydicom>=2.4
+pylibjpeg>=2.0
+pylibjpeg-libjpeg>=2.3
+pylibjpeg-openjpeg>=2.5
 tqdm>=4.66
 python-dotenv>=1.0
 matplotlib>=3.7
 numpy>=1.24
+pillow>=10
 jupyter>=1.0
-Pillow>=10.0
+torch
+torchvision
 scikit-learn>=1.3
