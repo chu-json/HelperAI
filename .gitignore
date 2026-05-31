@@ -45,6 +45,7 @@ __pycache__/
 .venv311/
 venv/
 .ipynb_checkpoints/
+.jupyter/
 
 # --- Local tools ---
 bin/gen3-client
